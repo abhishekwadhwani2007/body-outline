@@ -1,28 +1,28 @@
-# Body Outline
+<div align="center">
 
-A computer vision module that draws a **neon glowing body outline** around a person in any photo.
+# body-outline
 
-Built from scratch as the overlay engine for **CameraCoach** — an app that lets you pick a reference photo and align your own pose to it in real time.
+**Draws a smooth neon glow outline around a person in any photo.**
 
-![Demo](testImage_overlay.png)
+Built from scratch as the overlay engine for [CameraCoach](https://github.com/abhis) — an app that lets you pick a reference photo and align your pose to it in real time.
+
+</div>
 
 ---
 
-## Why This Exists
+![Before and after](demo.png)
 
-CameraCoach needed one core feature: overlay a glowing silhouette of a reference pose over a live camera feed so the user can match their body position to it.
+---
 
-The idea sounds simple. Finding a way to do it cleanly was not.
+## The Problem
 
-There was no existing library or open-source project that extracted a smooth, accurate body outline from an arbitrary photo. Segmentation APIs give you a mask, not an outline. Edge detectors give you noise. Skeleton overlays skip the full body shape. None of them produced what we needed — a clean, smooth, glow-edged silhouette that works on real-world photos with complex backgrounds.
+CameraCoach needed one core feature: overlay a glowing silhouette of a reference pose over a live camera feed so users can see exactly where to position their body.
 
-So we built this from the ground up.
+There was no open-source library or repo that did this cleanly. Most approaches gave you a bounding box, a rough blob, or a full segmentation mask — none of which are an outline. So this was built from scratch.
 
 ---
 
 ## How It Works
-
-The pipeline runs four steps:
 
 ```
 Input photo
@@ -32,56 +32,38 @@ MediaPipe TFLite pose model
     ↓
 Skeleton mask (from landmarks) merged with segmentation mask
     ↓
-GrabCut refinement (sharpens edges against real image pixels)
+GrabCut refinement  (sharpens edges against actual image pixels)
     ↓
-Smoothed contour extraction + multi-layer neon glow
+Smoothed contour extraction
     ↓
-Output photo with outline
+Multi-layer neon glow drawn over the original photo
 ```
 
-### Why landmarks + segmentation together?
-
-The segmentation mask from the model is coarse — it gives a rough blob. On its own, it misses thin limbs and loses detail at the edges. The landmark-based skeleton fills in the gaps. Together they're much more reliable than either alone.
-
-### What GrabCut does here
-
-GrabCut uses the merged mask as a starting hint, then looks at the actual pixel colors in the image to find the real foreground edge. It's the step that makes the outline follow the actual body shape rather than just the model's approximation.
+The segmentation mask from the model alone is too coarse — it misses thin limbs and bleeds at the edges. The landmark-based skeleton fills those gaps. Combining both, then sharpening with GrabCut, gives a much more accurate result than either approach on its own.
 
 ---
 
-## What Was Broken and How We Fixed It
+## Problems We Hit and How We Fixed Them
 
-Building this took a lot of iteration. Here's what actually went wrong and what solved each problem.
+### Arms disappearing
 
-### Arms getting cut out of the outline
+GrabCut classified thin outstretched arms as background. Before GrabCut runs, we paint thick strokes along both arm chains into a "force foreground" mask. Those pixels are locked in and can't be removed.
 
-**Problem:** GrabCut classified thin arm regions as background and erased them. Outstretched arms were especially bad — they'd just disappear from the outline.
+### Held objects creating a distorted bump
 
-**Fix:** Before running GrabCut, we paint thick strokes along both arm chains (shoulder → elbow → wrist) into a "force foreground" mask. GrabCut respects this and keeps those pixels as foreground no matter what.
+When someone holds something in front of their body, the mask included it in a messy way. We added a blob detector that looks for dark, saturated pixels near the wrists, fits a clean ellipse over it, and adds it to the mask properly.
 
-### Held objects creating a bump or hump
+### Hair making the head edge spiky
 
-**Problem:** When someone holds something in front of their body (like a ball or prop), the mask would include it in a messy, distorted way — creating a weird lump in the outline where it didn't belong.
+Loose hair and ponytails create very noisy outline edges. We apply morphological smoothing only to the head region (bounded by ear and shoulder landmarks), using a connected component filter to make sure we only clean up actual head pixels.
 
-**Fix:** We added a held-object detector that looks for dark, saturated blobs near the wrists. When it finds one, it fits a clean ellipse over it and adds it properly to the mask. The result is a smooth, intentional shape instead of a random protrusion.
+### Face covered by the glow
 
-### Hair making the head outline jagged
-
-**Problem:** Loose hair, ponytails, and flyaways create very noisy mask edges at the top of the head. The outline would look spiky and irregular there.
-
-**Fix:** We apply morphological smoothing only to the head region (bounded by the ear and shoulder landmarks). We use a connected component filter seeded from the head position so we only keep regions that actually belong to the head — not random noise nearby.
-
-### Face disappearing under the glow
-
-**Problem:** The glow outline is drawn along the full silhouette edge, which includes the face. That meant the person's face got covered by the green glow.
-
-**Fix:** After drawing the outline, we use a distance transform inside the head region to create a soft alpha blend that gradually restores the original face pixels. The glow stays on the edges — the face stays visible.
+The glow traces the full silhouette edge, which includes the face. After drawing the outline, a distance-transform-based alpha blend restores the original face pixels inside the head area. The glow stays on the edge — the face stays visible.
 
 ### Edges looking like a polygon
 
-**Problem:** Raw OpenCV contours follow pixel grid boundaries exactly. At normal viewing size this looks like a jagged polygon rather than a body shape.
-
-**Fix:** Each contour is resampled to evenly-spaced points along its perimeter, then smoothed with a wrapped 1D Gaussian filter. This produces organic, curved edges that actually look like a person.
+Raw OpenCV contours follow the pixel grid exactly. Each contour is resampled to evenly-spaced points along the perimeter, then smoothed with a wrapped 1D Gaussian filter. This produces organic, curved edges.
 
 ---
 
@@ -89,16 +71,13 @@ Building this took a lot of iteration. Here's what actually went wrong and what 
 
 Results vary based on the input photo.
 
-Photos close to the model's training distribution (person standing, clear full-body view, decent lighting) → clean, accurate outline.
+The underlying model (`pose_landmark_full.tflite`) was trained by Google on a specific, relatively small set of images — mostly studio-style sports and activity photos with clear lighting and full body visibility. All the thresholds and pipeline parameters in this module were tuned to match that same type of image.
 
-Unusual poses, heavy occlusion, motion blur, or cluttered backgrounds → inconsistent results.
+**Photos that match this style → clean, accurate results.**
 
-This is a known limitation. The underlying model (`pose_landmark_full.tflite`) was trained by Google on a specific distribution of images. When your photo matches that distribution, it works well. When it doesn't, the segmentation mask starts out noisy and the pipeline can only partially compensate.
+Photos with unusual angles, heavy occlusion, motion blur, cluttered backgrounds, or poor lighting → inconsistent results. The segmentation mask starts out noisy and the pipeline can only partially compensate.
 
-**What we're planning to improve:**
-- Custom segmentation training on photos closer to CameraCoach's real use cases
-- Confidence-based fallback to a simpler mask when pose score is low
-- Exploring SAM (Segment Anything) as an alternative segmentation backend
+This is a known limitation. The plan is to fine-tune the segmentation stage on a dataset that better matches CameraCoach's real use cases, and add a confidence-based fallback for cases where the model isn't confident.
 
 ---
 
@@ -110,16 +89,18 @@ Python 3.10+
 pip install -r requirements.txt
 ```
 
-**Model file:** Download `pose_landmark_full.tflite` from [Google MediaPipe Models](https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task) and place it in the project root. It's not included here because of its size (6.1 MB).
+**Model file:** Download `pose_landmark_full.tflite` and place it in the project root. It's not included in this repo due to size (6.1 MB).
+
+> Download from: [MediaPipe Models — Pose Landmarker Full](https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task)
 
 ---
 
 ## Usage
 
-Copy `.env` and set your image path:
+Copy `.env.example` to `.env` and set your image path:
 
 ```bash
-cp .env .env  # it's already there, just edit it
+cp .env.example .env
 ```
 
 ```env
@@ -133,13 +114,13 @@ Then run:
 python pose_outline.py
 ```
 
-Or pass paths directly:
+Or pass paths directly without touching `.env`:
 
 ```bash
 python pose_outline.py your_photo.jpg output.png
 ```
 
-**Python API:**
+**As a module:**
 
 ```python
 from pose_outline import process
@@ -153,20 +134,21 @@ process("input.jpg", "output.png")
 
 ```
 body-outline/
-├── pose_outline.py           # The whole pipeline — one file
-├── pose_landmark_full.tflite # MediaPipe pose model (not in git — download separately)
+├── pose_outline.py           # The full pipeline — one file, no extras
+├── pose_landmark_full.tflite # Pose model (not tracked — download separately)
 ├── requirements.txt
 ├── .env                      # Your image paths — not committed
 ├── .env.example              # Template for .env
 ├── testImage.png             # Sample input
-└── testImage_overlay.png     # Sample output
+├── testImage_overlay.png     # Sample output
+└── demo.png                  # Side-by-side comparison (README banner)
 ```
 
 ---
 
 ## Part of CameraCoach
 
-CameraCoach is an app for getting the exact pose you want in a photo. You pick a reference image, and the app overlays a glowing silhouette of that pose over your live camera view so you can align your body to match it.
+CameraCoach is an app for getting the exact pose you want in a photo. You pick a reference image, and the app overlays a glowing silhouette of that pose over your live camera view so you can position your body to match it.
 
 This module is the piece that generates that silhouette.
 
