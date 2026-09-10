@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.env
+.venv/
+venv/
+
+# Model weights (large binary — download separately)
+*.tflite
+
+# Output images (not source files)
+*_overlay.png
+*_outline.png
+
+# IDE configs
+.vscode/
+.idea/
+*.swp
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Agent runtime
+.agents/
