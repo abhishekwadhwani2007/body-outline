@@ -4,7 +4,7 @@
 
 **Draws a smooth neon glow outline around a person in any photo.**
 
-Built from scratch as the overlay engine for [CameraCoach](https://github.com/abhis) — an app that lets you pick a reference photo and align your pose to it in real time.
+Built from scratch as the standalone silhouette and neon-glow body outline engine for [CameraCoach](https://github.com/abhishekwadhwani2007/CameraCoach) — an AI app that guides you into a reference pose in real time.
 
 </div>
 
@@ -148,9 +148,9 @@ body-outline/
 
 ## Part of CameraCoach
 
-CameraCoach is an app for getting the exact pose you want in a photo. You pick a reference image, and the app overlays a glowing silhouette of that pose over your live camera view so you can position your body to match it.
+This module powers [CameraCoach](https://github.com/abhishekwadhwani2007/CameraCoach), a Flutter app that guides you into a reference pose with on-device pose detection and auto-capture.
 
-This module is the piece that generates that silhouette.
+While CameraCoach integrates this logic into a full mobile workflow with client-side fallback rendering and a FastAPI service, **body-outline** serves as the standalone, benchmarkable Python engine (MediaPipe TFLite landmarks + GrabCut refinement + OpenCV neon glow).
 
 ---
 
